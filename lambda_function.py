@@ -6,8 +6,8 @@ import re
 import pytz
 from cStringIO import StringIO
 import logging
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 def lambda_handler(event, context):
     print("lambda_handler started")
