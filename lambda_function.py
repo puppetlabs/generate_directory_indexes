@@ -4,7 +4,13 @@ import jinja2
 from jinja2 import Environment
 import re
 import pytz
-from cStringIO import StringIO
+
+# Python 2/3 compatible hack
+try:
+    from StringIO import StringIO
+except ImportError:
+    from io import StringIO
+
 import logging
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
