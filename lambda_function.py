@@ -4,6 +4,7 @@ import jinja2
 from jinja2 import Environment
 import re
 import pytz
+from concurrent.futures import ThreadPoolExecutor
 
 # Python 2/3 compatible hack
 try:
@@ -177,7 +178,10 @@ def setBucketPermissions(bucket):
     s3 = boto3.resource('s3')
     s3_bucket = s3.Bucket(bucket)
     for obj in s3_bucket.objects.all():
-        obj.Acl().put(ACL='public-read')
+        setObjectPermissions(obj)
+
+def setObjectPermissions(obj):
+    obj.Acl().put(ACL='public-read')
 
 def configureWebsite(bucket):
     s3 = boto3.client('s3')
