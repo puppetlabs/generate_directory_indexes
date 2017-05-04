@@ -4,7 +4,7 @@ import jinja2
 from jinja2 import Environment
 import re
 import pytz
-from concurrent.futures import ThreadPoolExecutor
+from concurrent import futures
 
 # Python 2/3 compatible hack
 try:
@@ -14,7 +14,11 @@ except ImportError:
 
 import logging
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
+boto3_logger = logging.getLogger('boto3')
+botocore_logger = logging.getLogger('botocore')
+logging.basicConfig(level=logging.DEBUG)
+boto3_logger.setLevel(logging.WARN)
+botocore_logger.setLevel(logging.WARN)
 
 def lambda_handler(event, context):
     print("lambda_handler started")
@@ -66,11 +70,11 @@ def list_subdirectories(prefixes, prefix):
     return filter(None, list(unique_subdirs))
 
 def directoryLastModified(prefix, bucket_contents):
-    filtered = filter(lambda k: k['name'].startswith(prefix) and len(k['name'].split('/')) == len(prefix.split('/')) + 1, bucket_contents)
+    filtered_contents = list(filter(lambda k: k['name'].startswith(prefix) and len(k['name'].split('/')) == len(prefix.split('/')) + 1, bucket_contents))
     # if there are any files in the folder, the last_modified date for the directory
     # is the last_modified date for the newest file in the directory
-    if(len(filtered) > 0):
-        sorted_bucket_contents = sorted(filtered, key=lambda k: k['lastModified'])
+    if(len(filtered_contents) > 0):
+        sorted_bucket_contents = sorted(filtered_contents, key=lambda k: k['lastModified'])
         last_modified = sorted_bucket_contents[-1:][0]['lastModified']
         return last_modified
     # if there aren't any files in the folder, cheat and use current time (dumb hack, I know)
@@ -109,7 +113,7 @@ def ls(prefixes, prefix, bucket_contents):
             'lastModified': directoryLastModified(subdir, bucket_contents),
             'icon': 'folder.gif'
             })
-    
+
     return filtered_bucket_contents
 
 def sort_bucket_contents(bucket_contents, order_by, reverse_order=False):
@@ -174,12 +178,6 @@ def upload_index(bucket, prefix, rendered_html, order_by, reverse_order=False):
 
     return response
 
-def setBucketPermissions(bucket):
-    s3 = boto3.resource('s3')
-    s3_bucket = s3.Bucket(bucket)
-    for obj in s3_bucket.objects.all():
-        setObjectPermissions(obj)
-
 def setObjectPermissions(obj):
     obj.Acl().put(ACL='public-read')
 
@@ -188,23 +186,66 @@ def configureWebsite(bucket):
     website_configuration = { 'IndexDocument': {'Suffix': 'index_by_name.html' } }
     s3.put_bucket_website(Bucket=bucket, WebsiteConfiguration=website_configuration)
 
+
+#def generateIndex(bucket, prefix, order_by, ordered_contents, reverse_order):
+def generateIndex(bucket, i):
+    #logger.debug('generating index for {}'.format(i['prefix']))
+    rendered_html = render_index(i['prefix'], i['order_by'], i['ordered_contents'], i['reverse_order'])
+    upload_index(bucket, i['prefix'], rendered_html, i['order_by'], i['reverse_order'])
+
+# TODO: refactor to generate a list of indexes that need to be generated
+# TODO: parallelize rendering and uploads
 def generateIndexes(bucket):
+    from timeit import default_timer as timer # performance profiling
+    start = timer()
+
     logger.info('started GenerateIndexes for {}'.format(bucket))
 
     # get bucket contents
     bucket_contents = list_bucket_contents(bucket)
+    end = timer()
+    print("bucket contents took ", end - start)
+
+    start = timer()
     # create list of unique prefixes
-    unique_prefixes = prefixes(bucket_contents)
+    unique_prefixes = prefixes(bucket_contents)#[0:1000]
+    end = timer()
+    print("generating unique prefixes took ", end - start)
     # iterate over list of unique prefixes
+    start = timer()
+    indexes_to_generate = []
     for prefix in unique_prefixes:
+        #logger.debug('processing prefix {}'.format(prefix))
         contents = ls(unique_prefixes, prefix, bucket_contents)
 
         for order_by in ['name', 'size', 'lastModified']:
             for reverse_order in [True, False]:
-                logger.info('processing prefix {}'.format(prefix))
+                #logger.info('processing prefix {}'.format(prefix))
                 ordered_contents = sort_bucket_contents(contents, order_by, reverse_order)
-                rendered_html = render_index(prefix, order_by, ordered_contents, reverse_order)
-                upload_index(bucket, prefix, rendered_html, order_by, reverse_order)
-    setBucketPermissions(bucket)
+                indexes_to_generate += [{'prefix': prefix, 'ordered_contents': ordered_contents, 'order_by': order_by, 'reverse_order': reverse_order}]
+    end = timer()
+    print("generating indexes list took ", end - start)
+    print('number of indexes to generate: {}'.format(len(indexes_to_generate)))
+
+    start = timer()
+    # took 111 seconds for 100 prefixes with 1 worker
+    # took 16 seconds for 100 prefixes with 10 workers
+    # took 14 seconds for 100 prefixes with 20 workers
+    # took 93-95 seconds for 1000 prefixes with 20 workers
+    # took 110 seconds for 1000 prefixes with 10 workers
+    # took 510 seconds for 23820 indexes with 20 workers under Python 2.7
+    # took 451 seconds for 23820 indexes with 20 workers under Python 3
+    with futures.ThreadPoolExecutor(max_workers=20) as executor:
+        todo = []
+        for i in indexes_to_generate:
+            future = executor.submit(generateIndex, bucket, i)
+            todo.append(future)
+        results = []
+        for future in futures.as_completed(todo):
+            res = future.result()
+            results.append(res)
+
+    end = timer()
+    print("generating indexes took ", end - start)
     configureWebsite(bucket)
     return True
