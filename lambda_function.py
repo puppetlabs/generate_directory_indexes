@@ -168,12 +168,12 @@ def index_file_name(prefix, order_by, reverse_order):
     return file_name if len(prefix) == 0 else prefix + '/' + file_name
 
 # upload rendered HTML to S3 bucket
-def upload_index(bucket, prefix, rendered_html, order_by, reverse_order=False):
+def upload_index(client, bucket, prefix, rendered_html, order_by, reverse_order=False):
     object_name = index_file_name(prefix, order_by, reverse_order)
 
-    s3c = boto3.client('s3')
+    #s3c = boto3.client('s3')
     fake_handle = StringIO(rendered_html)
-    response = s3c.put_object(Bucket=bucket, Key=object_name, Body=fake_handle.read(), ContentType='text/html')
+    response = client.put_object(Bucket=bucket, Key=object_name, Body=fake_handle.read(), ContentType='text/html')
     #print response # TODO: error handling
 
     return response
@@ -188,10 +188,10 @@ def configureWebsite(bucket):
 
 
 #def generateIndex(bucket, prefix, order_by, ordered_contents, reverse_order):
-def generateIndex(bucket, i):
+def generateAndUploadIndex(client, bucket, i):
     #logger.debug('generating index for {}'.format(i['prefix']))
     rendered_html = render_index(i['prefix'], i['order_by'], i['ordered_contents'], i['reverse_order'])
-    upload_index(bucket, i['prefix'], rendered_html, i['order_by'], i['reverse_order'])
+    upload_index(client, bucket, i['prefix'], rendered_html, i['order_by'], i['reverse_order'])
 
 # TODO: refactor to generate a list of indexes that need to be generated
 # TODO: parallelize rendering and uploads
@@ -208,7 +208,7 @@ def generateIndexes(bucket):
 
     start = timer()
     # create list of unique prefixes
-    unique_prefixes = prefixes(bucket_contents)#[0:1000]
+    unique_prefixes = prefixes(bucket_contents)[0:1000]
     end = timer()
     print("generating unique prefixes took ", end - start)
     # iterate over list of unique prefixes
@@ -235,10 +235,13 @@ def generateIndexes(bucket):
     # took 110 seconds for 1000 prefixes with 10 workers
     # took 510 seconds for 23820 indexes with 20 workers under Python 2.7
     # took 451 seconds for 23820 indexes with 20 workers under Python 3
+    # generating indexes took 34 seconds for 6000 indexes, without uploading
+    # generating indexes took 110 seconds for 6000 indexes, with uploading
+    client = boto3.client('s3')
     with futures.ThreadPoolExecutor(max_workers=20) as executor:
         todo = []
         for i in indexes_to_generate:
-            future = executor.submit(generateIndex, bucket, i)
+            future = executor.submit(generateAndUploadIndex, client, bucket, i)
             todo.append(future)
         results = []
         for future in futures.as_completed(todo):
@@ -249,3 +252,4 @@ def generateIndexes(bucket):
     print("generating indexes took ", end - start)
     configureWebsite(bucket)
     return True
+
