@@ -5,6 +5,8 @@ from jinja2 import Environment
 import re
 import pytz
 from concurrent import futures
+import collections
+from timeit import default_timer as timer # performance profiling
 
 # Python 2/3 compatible hack
 try:
@@ -34,28 +36,28 @@ def lambda_handler(event, context):
         'isBase64Encoded': False
     }
 
-def list_bucket_contents(bucket):
+def scan_bucket(bucket):
     # Initial setup
     s3 = boto3.resource('s3')
     s3_bucket = s3.Bucket(bucket)
 
-# list objects in bucket
-    objects = map(lambda obj:
-    { 'name': obj.key,
-      'size': obj.size,
-      'lastModified': obj.last_modified,
-      'icon': 'unknown.gif'
-    }, s3_bucket.objects.all())
-    filtered_objects = filter(lambda k: not bool(re.match('.*index_by.*\.html$', k['name'])), objects)
-    return filtered_objects
+    objects = {}
+    unique_prefixes = set([])
+    bucket = collections.namedtuple('bucket', ['objects', 'prefixes'])([], set([]))
 
-
-# create unique list of prefixes
-def prefixes(bucket_contents):
-    file_list = map(lambda n: n['name'], bucket_contents)
-    prefixes = map(lambda n: '/'.join(n.split('/')[:-1]), file_list)
-    unique_prefixes = set(prefixes)
-    return list(unique_prefixes)
+    for obj in s3_bucket.objects.all():
+        # Ignore the index files we generate
+        if bool(re.match('.*index_by.*\.html$', obj.key)):
+            continue
+        # Get only the object data we care about
+        bucket.objects.append({ 'name': obj.key,
+                             'size': obj.size,
+                             'lastModified': obj.last_modified,
+                             'icon': 'unknown.gif'
+        })
+        # Generate a list of unique prefixes while enumerating to avoid having to enumerate bucket contents again later
+        bucket.prefixes.add('/'.join(obj.key.split('/')[:-1]))
+    return bucket
 
 def list_subdirectories(prefixes, prefix):
     subdirectories = []
@@ -174,74 +176,78 @@ def upload_index(client, bucket, prefix, rendered_html, order_by, reverse_order=
     #s3c = boto3.client('s3')
     fake_handle = StringIO(rendered_html)
     response = client.put_object(Bucket=bucket, Key=object_name, Body=fake_handle.read(), ContentType='text/html')
-    #print response # TODO: error handling
+#    print(response)# TODO: error handling
 
     return response
-
-def setObjectPermissions(obj):
-    obj.Acl().put(ACL='public-read')
 
 def configureWebsite(bucket):
     s3 = boto3.client('s3')
     website_configuration = { 'IndexDocument': {'Suffix': 'index_by_name.html' } }
     s3.put_bucket_website(Bucket=bucket, WebsiteConfiguration=website_configuration)
 
+def patch_http_connection_pool(**constructor_kwargs):
+    # http://stackoverflow.com/questions/18466079/can-i-change-the-connection-pool-size-for-pythons-requests-module
+    """
+    This allows to override the default parameters of the 
+    HTTPConnectionPool constructor.
+    For example, to increase the poolsize to fix problems 
+    with "HttpConnectionPool is full, discarding connection"
+    call this function with maxsize=16 (or whatever size 
+    you want to give to the connection pool)
+    """
+    from urllib3 import connectionpool, poolmanager
 
-#def generateIndex(bucket, prefix, order_by, ordered_contents, reverse_order):
-def generateAndUploadIndex(client, bucket, i):
-    #logger.debug('generating index for {}'.format(i['prefix']))
-    rendered_html = render_index(i['prefix'], i['order_by'], i['ordered_contents'], i['reverse_order'])
-    upload_index(client, bucket, i['prefix'], rendered_html, i['order_by'], i['reverse_order'])
+    class MyHTTPConnectionPool(connectionpool.HTTPConnectionPool):
+        def __init__(self, *args,**kwargs):
+            kwargs.update(constructor_kwargs)
+            super(MyHTTPConnectionPool, self).__init__(*args,**kwargs)
+    poolmanager.pool_classes_by_scheme['http'] = MyHTTPConnectionPool
 
-# TODO: refactor to generate a list of indexes that need to be generated
-# TODO: parallelize rendering and uploads
-def generateIndexes(bucket):
-    from timeit import default_timer as timer # performance profiling
+#patch_http_connection_pool(maxsize=25)
+#generateIndexes('downloads.puppetlabs.com')
+#generateIndexes('yum.puppetlabs.com')
+#generateIndexes('apt.puppetlabs.com')
+
+
+# Reorganization
+
+# Step 2: generate, render indexes
+
+# Step 3: upload indexes
+#print('number of indexes to generate: {}'.format(len(indexes_to_generate)))
+
+def create_index_queue(bucket):
     start = timer()
+    for prefix in bucket.prefixes:
+        #print("prefix: ", prefix)
+        contents = ls(bucket.prefixes, prefix, bucket.objects)
 
-    logger.info('started GenerateIndexes for {}'.format(bucket))
-
-    # get bucket contents
-    bucket_contents = list_bucket_contents(bucket)
-    end = timer()
-    print("bucket contents took ", end - start)
-
-    start = timer()
-    # create list of unique prefixes
-    unique_prefixes = prefixes(bucket_contents)[0:1000]
-    end = timer()
-    print("generating unique prefixes took ", end - start)
-    # iterate over list of unique prefixes
-    start = timer()
-    indexes_to_generate = []
-    for prefix in unique_prefixes:
-        #logger.debug('processing prefix {}'.format(prefix))
-        contents = ls(unique_prefixes, prefix, bucket_contents)
-
+        indexes_to_generate = []
         for order_by in ['name', 'size', 'lastModified']:
             for reverse_order in [True, False]:
                 #logger.info('processing prefix {}'.format(prefix))
-                ordered_contents = sort_bucket_contents(contents, order_by, reverse_order)
+                ordered_contents = sort_bucket_contents(bucket.objects, order_by, reverse_order)
                 indexes_to_generate += [{'prefix': prefix, 'ordered_contents': ordered_contents, 'order_by': order_by, 'reverse_order': reverse_order}]
     end = timer()
     print("generating indexes list took ", end - start)
-    print('number of indexes to generate: {}'.format(len(indexes_to_generate)))
+    return indexes_to_generate
+    #print('number of indexes to generate: {}'.format(len(indexes_to_generate)))
 
+def render_indexes(index_queue):
+    return map(lambda obj: {
+        'prefix': obj['prefix'],
+        'order_by': obj['order_by'],
+        'reverse_order': obj['reverse_order'],
+        'rendered_html': render_index(obj['prefix'], obj['order_by'], obj['ordered_contents'], obj['reverse_order'])
+    }, index_queue)
+
+def upload_indexes(rendered_indexes, bucket_name):
     start = timer()
-    # took 111 seconds for 100 prefixes with 1 worker
-    # took 16 seconds for 100 prefixes with 10 workers
-    # took 14 seconds for 100 prefixes with 20 workers
-    # took 93-95 seconds for 1000 prefixes with 20 workers
-    # took 110 seconds for 1000 prefixes with 10 workers
-    # took 510 seconds for 23820 indexes with 20 workers under Python 2.7
-    # took 451 seconds for 23820 indexes with 20 workers under Python 3
-    # generating indexes took 34 seconds for 6000 indexes, without uploading
-    # generating indexes took 110 seconds for 6000 indexes, with uploading
     client = boto3.client('s3')
     with futures.ThreadPoolExecutor(max_workers=20) as executor:
         todo = []
-        for i in indexes_to_generate:
-            future = executor.submit(generateAndUploadIndex, client, bucket, i)
+        for i in rendered_indexes:
+            future = executor.submit(upload_index, client, bucket_name, i['prefix'], i['rendered_html'], i['order_by'], i['reverse_order'])
             todo.append(future)
         results = []
         for future in futures.as_completed(todo):
@@ -249,7 +255,38 @@ def generateIndexes(bucket):
             results.append(res)
 
     end = timer()
-    print("generating indexes took ", end - start)
-    configureWebsite(bucket)
+    print("uploading indexes took ", end - start)
+
+def index(bucket_name):
+    logger.info('started GenerateIndexes for {}'.format(bucket_name))
+
+    # Step 1: enumerate bucket, generate unique prefixes
+    start = timer()
+    bucket = scan_bucket(bucket_name)
+    end = timer()
+    print("scanning bucket took ", end - start)
+
+
+    # Step 2: Figure out which indexes to generate
+    start = timer()
+    index_queue = create_index_queue(bucket)
+    end = timer()
+    print("generating index_queue took ", end - start)
+
+    # Step 3: render indexes
+    start = timer()
+    rendered_indexes = render_indexes(index_queue)
+    end = timer()
+    print("rendering indexes list took ", end - start)
+
+    start = timer()
+    upload_indexes(rendered_indexes, bucket_name)
+    end = timer()
+    print("uploading indexes took ", end - start)
+
+    configureWebsite(bucket_name)
     return True
 
+
+index('apt.puppetlabs.com')
+#index('directory-index-test')
