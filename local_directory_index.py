@@ -3,6 +3,7 @@ from jinja2 import Environment
 import os,sys
 import datetime
 import argparse
+import re
 
 #sys.setrecursionlimit(2100000000)
 
@@ -44,7 +45,7 @@ def render_index(prefix, order_by, contents, reverse_order):
     HTML = """
     <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
     <html>
-     <head>
+     <head> 
        <title>Index of /{{prefix}}</title>
      </head>
      <body>
@@ -87,13 +88,24 @@ def generate_indexes():
         for reverse_order in [True, False]:
             indexes_to_generate.append({'prefix': prefix, 'contents': contents, 'order_by': order_by, 'reverse_order': reverse_order})
 
+# not in use
+def format_directory_listing(directory_listing):
+    return map(lambda k: {
+        'name': k['name'],
+        'lastModified': format_date(k['lastModified']),
+        'size': format_size(k['size'])
+    }, directory_listing)
+
 def walk(path):
     contents = os.listdir(path)
     directory_listing = []
     # generate indexes for current path
     for file in contents:
         # add size, lastModified, file/folder type to metadata
-        fullpath = os.path.join(path, path)
+        fullpath = os.path.join(path, file)
+        print(fullpath)
+        if bool(re.match('.*index_by.*\.html$', file)):
+            continue
         directory_listing.append({
             'name': file,
             'lastModified': os.path.getmtime(fullpath),
@@ -103,6 +115,7 @@ def walk(path):
         for reverse_order in [True, False]:
             file_name = os.path.join(path, index_file_name('', order_by, reverse_order))
             rendered_html = render_index(path, order_by, directory_listing, reverse_order)
+            print(directory_listing)
             if args.test:
                 print('Would create: ', file_name)
             else:
