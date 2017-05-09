@@ -1,11 +1,18 @@
-#from __future__ import print_function
 import jinja2
 from jinja2 import Environment
-#import re
-#import collections
-#from timeit import default_timer as timer # performance profiling
 import os,sys
 import datetime
+import argparse
+
+#sys.setrecursionlimit(2100000000)
+
+parser = argparse.ArgumentParser()
+parser.add_argument("path", help="Path to index and write indexes to")
+parser.add_argument("--test", help="Only print files to be created without writing them to disk", action="store_true")
+parser.add_argument("--verbose", help="Print names of files as they're created", action="store_true")
+args = parser.parse_args()
+print(args.path)
+
 
 # Python 2/3 compatible hack
 try:
@@ -61,11 +68,6 @@ def index_file_name(prefix, order_by, reverse_order):
     file_name = 'index' + '_by_' + order_by + order_suffix + '.html'
     return file_name if len(prefix) == 0 else prefix + '/' + file_name
 
-# Reorganization
-
-# Step 2: generate, render indexes
-
-sys.setrecursionlimit(2100000000)
 
 def format_date(d):
     return datetime.datetime.fromtimestamp(
@@ -101,10 +103,15 @@ def walk(path):
         for reverse_order in [True, False]:
             file_name = os.path.join(path, index_file_name('', order_by, reverse_order))
             rendered_html = render_index(path, order_by, directory_listing, reverse_order)
-            #print(file_name)
-            index_file = open(file_name, 'w')
-            index_file.write(rendered_html)
-            index_file.close()
+            if args.test:
+                print('Would create: ', file_name)
+            else:
+                if args.verbose:
+                    print('Wrote: ', file_name)
+                index_file = open(file_name, 'w')
+                index_file.write(rendered_html)
+                index_file.close()
+
 
     # recurse into subdirectories
     for file in contents:
@@ -112,4 +119,9 @@ def walk(path):
         if os.path.isdir(file_pwd):
             walk(file_pwd)
 
-walk('/Users/daniel/Downloads/weth/yum')
+def validate_input(path):
+    if not os.path.isdir(path):
+        sys.exit('Error: {} is not a directory'.format(path))
+
+validate_input(args.path)
+walk(args.path)
