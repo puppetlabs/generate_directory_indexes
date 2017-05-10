@@ -31,13 +31,6 @@ elif args.verbose == 2:
 elif args.verbose >= 3:
     logging.basicConfig(level=logging.DEBUG)
 
-logger.info("info")
-logger.error("error")
-logger.warning("warning")
-logger.debug("debug")
-
-exit()
-
 def index_link(prefix, current_order_by, new_order_by, reverse_order):
     if current_order_by == new_order_by:
         return index_file_name(prefix, current_order_by, not reverse_order)
@@ -45,28 +38,34 @@ def index_link(prefix, current_order_by, new_order_by, reverse_order):
         return index_file_name(prefix, new_order_by, False)
 
 # use a templating library to turn a prefix and a list of contents into an HTML directory index
-def render_index(prefix, order_by, contents, reverse_order):
-    parent_directory = '/'.join(prefix.split('/')[:-1])
+def render_index(prefix, order_by, contents, reverse_order, base_path):
+    logger.debug('rendering index for {prefix} ordered by {order_by} and reverse_order={reverse_order}'.format(prefix=prefix, order_by=order_by, reverse_order=reverse_order))
 
-    index_by = {}
-    index_by['name'] = index_link(prefix, order_by, 'name', reverse_order)
-    index_by['size'] = index_link(prefix, order_by, 'size', reverse_order)
-    index_by['lastModified'] = index_link(prefix, order_by, 'lastModified', reverse_order)
 
     sorted_contents = sorted(contents, key=lambda k: k[order_by], reverse=reverse_order)
     formatted_contents = format_directory_listing(sorted_contents)
+
+    # Remove the base path from the prefix to avoid putting the full filesystem path in the index
+    path = '/' if prefix == base_path else prefix.replace(base_path, '')
+    parent_directory = '/'.join(path.split('/')[:-1])
+
+    index_by = {}
+    index_by['lastModified'] = index_link(path, order_by, 'lastModified', reverse_order)
+    index_by['name'] = index_link(path, order_by, 'name', reverse_order)
+    index_by['size'] = index_link(path, order_by, 'size', reverse_order)
+    logging.debug('path: {path}'.format(path=path))
 
     HTML = """
     <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
     <html>
      <head> 
-       <title>Index of /{{prefix}}</title>
+       <title>Index of {{path}}</title>
      </head>
      <body>
-       <h1>Index of /{{prefix}}</h1>
+       <h1>Index of {{path}}</h1>
     <table><tr><th></th><th><a href="{{index_link['name']}}">Name</a></th><th><a href="{{index_link['lastModified']}}">Last modified</a></th><th><a href="{{index_link['size']}}">Size</a></th><th>Description</th></tr><tr><th colspan="5"><hr></th></tr>
-    {% if prefix %}
-    <tr><td valign="top"><img src="https://s3-us-west-2.amazonaws.com/icons.puppet.com/back.gif"></td><td><a href="/{{parent_directory}}/index_by_name.html">Parent Directory</a></td><td>&nbsp;</td><td align="right">  - </td><td>&nbsp;</td></tr>
+    {% if path != '/'%}
+    <tr><td valign="top"><img src="https://s3-us-west-2.amazonaws.com/icons.puppet.com/back.gif"></td><td><a href="{{parent_directory}}/index_by_name.html">Parent Directory</a></td><td>&nbsp;</td><td align="right">  - </td><td>&nbsp;</td></tr>
     {% endif %}
     {% for item in contents %}
         <tr><td valign="top"><img src="https://s3-us-west-2.amazonaws.com/icons.puppet.com/{{item['icon']}}" alt="[DIR]"></td><td><a href="{{item['name'].split('/')[-1:][0]}}">{{item['name'].split('/')[-1:][0]}}</a></td><td align="right">{{item['lastModified']}}  </td><td align="right"> {{item['size']}}</td><td>&nbsp;</td></tr>
@@ -76,7 +75,7 @@ def render_index(prefix, order_by, contents, reverse_order):
     </body></html>
     """
 
-    return Environment().from_string(HTML).render(prefix=prefix, contents=formatted_contents, parent_directory=parent_directory, index_link=index_by)
+    return Environment().from_string(HTML).render(path=path, contents=formatted_contents, parent_directory=parent_directory, index_link=index_by)
 
 def index_file_name(prefix, order_by, reverse_order):
     order_suffix = "_reverse" if reverse_order else ""
@@ -96,13 +95,6 @@ def format_size(num, suffix='B'):
         num /= 1024.0
     return "%.1f%s%s" % (num, 'Yi', suffix)
 
-def generate_indexes():
-    indexes_to_generate = []
-    for order_by in ['name', 'size', 'lastModified']:
-        for reverse_order in [True, False]:
-            indexes_to_generate.append({'prefix': prefix, 'contents': contents, 'order_by': order_by, 'reverse_order': reverse_order})
-
-# not in use
 def format_directory_listing(directory_listing):
     out = []
     for k in directory_listing:
@@ -113,10 +105,9 @@ def format_directory_listing(directory_listing):
     })
     return out
 
-def walk(path):
+def walk(path, base_path):
     contents = os.listdir(path)
     directory_listing = []
-    errors = []
     # generate indexes for current path
     for file in contents:
         # add size, lastModified, file/folder type to metadata
@@ -130,16 +121,15 @@ def walk(path):
                 'size': os.path.getsize(fullpath)
             })
         else:
-            print('skipping \'{}\' because the file cannot be read'.format(fullpath))
+            logging.error('skipping \'{}\' because the file cannot be read'.format(fullpath))
     for order_by in ['name', 'size', 'lastModified']:
         for reverse_order in [True, False]:
             file_name = os.path.join(path, index_file_name('', order_by, reverse_order))
-            rendered_html = render_index(path, order_by, directory_listing, reverse_order)
-            if args.test:
-                print('Would create: ', file_name)
+            rendered_html = render_index(path, order_by, directory_listing, reverse_order, base_path)
+            if args.noop:
+                logging.info('Would create: ', file_name)
             else:
-                if args.verbose:
-                    print('Wrote: ', file_name)
+                logging.info('Wrote: {}'.format(file_name))
                 index_file = open(file_name, 'w')
                 index_file.write(rendered_html)
                 index_file.close()
@@ -149,11 +139,11 @@ def walk(path):
     for file in contents:
         file_pwd = os.path.join(path, file)
         if os.path.isdir(file_pwd):
-            walk(file_pwd)
+            walk(file_pwd, base_path)
 
 def validate_input(path):
     if not os.path.isdir(path):
         sys.exit('Error: {} is not a directory'.format(path))
 
 validate_input(args.path)
-walk(args.path)
+walk(args.path, args.path)
