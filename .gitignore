@@ -7,3 +7,4 @@ pip-selfcheck.json
 pyvenv.cfg
 dist
 generate_directory_indexes.egg-info
+build
