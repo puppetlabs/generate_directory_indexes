@@ -28,7 +28,7 @@ if args.verbose == 1:
     logging.basicConfig(level=logging.WARNING)
 elif args.verbose == 2:
     logging.basicConfig(level=logging.INFO)
-elif args.verbose >= 3:
+else:
     logging.basicConfig(level=logging.DEBUG)
 
 def index_link(prefix, current_order_by, new_order_by, reverse_order):
