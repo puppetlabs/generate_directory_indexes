@@ -104,6 +104,7 @@ def format_directory_listing(directory_listing):
         'name': k['name'],
         'lastModified': format_date(k['lastModified']),
         'size': format_size(k['size']),
+        'icon': k['icon']
     })
     return out
 
