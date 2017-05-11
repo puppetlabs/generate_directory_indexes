@@ -54,6 +54,8 @@ def render_index(prefix, order_by, contents, reverse_order, base_path):
     index_by['name'] = index_link(path, order_by, 'name', reverse_order)
     index_by['size'] = index_link(path, order_by, 'size', reverse_order)
     logging.debug('path: {path}'.format(path=path))
+    logging.debug('contents: {contents}'.format(contents=contents))
+    logging.debug('parent_directory: {parent_directory}'.format(parent_directory=parent_directory))
 
     HTML = """
     <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
@@ -63,9 +65,9 @@ def render_index(prefix, order_by, contents, reverse_order, base_path):
      </head>
      <body>
        <h1>Index of {{path}}</h1>
-    <table><tr><th></th><th><a href="{{index_link['name']}}">Name</a></th><th><a href="{{index_link['lastModified']}}">Last modified</a></th><th><a href="{{index_link['size']}}">Size</a></th><th>Description</th></tr><tr><th colspan="5"><hr></th></tr>
+    <table><tr><th></th><th><a href="/{{index_link['name']}}">Name</a></th><th><a href="/{{index_link['lastModified']}}">Last modified</a></th><th><a href="/{{index_link['size']}}">Size</a></th><th>Description</th></tr><tr><th colspan="5"><hr></th></tr>
     {% if path != '/'%}
-    <tr><td valign="top"><img src="https://s3-us-west-2.amazonaws.com/icons.puppet.com/back.gif"></td><td><a href="{{parent_directory}}/index_by_name.html">Parent Directory</a></td><td>&nbsp;</td><td align="right">  - </td><td>&nbsp;</td></tr>
+    <tr><td valign="top"><img src="https://s3-us-west-2.amazonaws.com/icons.puppet.com/back.gif"></td><td><a href="/{{parent_directory}}/index_by_name.html">Parent Directory</a></td><td>&nbsp;</td><td align="right">  - </td><td>&nbsp;</td></tr>
     {% endif %}
     {% for item in contents %}
         <tr><td valign="top"><img src="https://s3-us-west-2.amazonaws.com/icons.puppet.com/{{item['icon']}}" alt="[DIR]"></td><td><a href="{{item['name'].split('/')[-1:][0]}}">{{item['name'].split('/')[-1:][0]}}</a></td><td align="right">{{item['lastModified']}}  </td><td align="right"> {{item['size']}}</td><td>&nbsp;</td></tr>
