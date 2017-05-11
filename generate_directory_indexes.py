@@ -65,9 +65,9 @@ def render_index(prefix, order_by, contents, reverse_order, base_path):
      </head>
      <body>
        <h1>Index of {{path}}</h1>
-    <table><tr><th></th><th><a href="/{{index_link['name']}}">Name</a></th><th><a href="/{{index_link['lastModified']}}">Last modified</a></th><th><a href="/{{index_link['size']}}">Size</a></th><th>Description</th></tr><tr><th colspan="5"><hr></th></tr>
+    <table><tr><th></th><th><a href="{{index_link['name']}}">Name</a></th><th><a href="{{index_link['lastModified']}}">Last modified</a></th><th><a href="{{index_link['size']}}">Size</a></th><th>Description</th></tr><tr><th colspan="5"><hr></th></tr>
     {% if path != '/'%}
-    <tr><td valign="top"><img src="https://s3-us-west-2.amazonaws.com/icons.puppet.com/back.gif"></td><td><a href="/{{parent_directory}}/index_by_name.html">Parent Directory</a></td><td>&nbsp;</td><td align="right">  - </td><td>&nbsp;</td></tr>
+    <tr><td valign="top"><img src="https://s3-us-west-2.amazonaws.com/icons.puppet.com/back.gif"></td><td><a href="{{parent_directory}}/index_by_name.html">Parent Directory</a></td><td>&nbsp;</td><td align="right">  - </td><td>&nbsp;</td></tr>
     {% endif %}
     {% for item in contents %}
         <tr><td valign="top"><img src="https://s3-us-west-2.amazonaws.com/icons.puppet.com/{{item['icon']}}" alt="[DIR]"></td><td><a href="{{item['name'].split('/')[-1:][0]}}">{{item['name'].split('/')[-1:][0]}}</a></td><td align="right">{{item['lastModified']}}  </td><td align="right"> {{item['size']}}</td><td>&nbsp;</td></tr>
@@ -103,7 +103,7 @@ def format_directory_listing(directory_listing):
         out.append ({
         'name': k['name'],
         'lastModified': format_date(k['lastModified']),
-        'size': format_size(k['size'])
+        'size': format_size(k['size']),
     })
     return out
 
@@ -117,10 +117,12 @@ def walk(path, base_path):
         if bool(re.match('.*index_by.*\.html$', file)):
             continue
         if(os.path.exists(fullpath)):
+            icon = 'folder.gif' if os.path.isdir(fullpath) else 'unknown.gif'
             directory_listing.append({
                 'name': file,
                 'lastModified': os.path.getmtime(fullpath),
-                'size': os.path.getsize(fullpath)
+                'size': os.path.getsize(fullpath),
+                'icon': icon
             })
         else:
             logging.error('skipping \'{}\' because the file cannot be read'.format(fullpath))
