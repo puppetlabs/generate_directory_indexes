@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python
 import jinja2
 from jinja2 import Environment
 import os,sys
@@ -49,6 +49,9 @@ def render_index(prefix, order_by, contents, reverse_order, base_path):
     path = '/' if prefix == base_path else prefix.replace(base_path, '')
     parent_directory = '/'.join(path.split('/')[:-1])
 
+    # dumb hack because paths are prefixed with / when run on os x but not linux
+    root_prefix = '' if path.startswith('/') else '/'
+
     index_by = {}
     index_by['lastModified'] = index_link(path, order_by, 'lastModified', reverse_order)
     index_by['name'] = index_link(path, order_by, 'name', reverse_order)
@@ -61,13 +64,17 @@ def render_index(prefix, order_by, contents, reverse_order, base_path):
     <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
     <html>
      <head> 
-       <title>Index of {{path}}</title>
+       <title>Index of {{root_prefix}}{{path}}</title>
      </head>
      <body>
-       <h1>Index of {{path}}</h1>
-    <table><tr><th></th><th><a href="{{index_link['name']}}">Name</a></th><th><a href="{{index_link['lastModified']}}">Last modified</a></th><th><a href="{{index_link['size']}}">Size</a></th><th>Description</th></tr><tr><th colspan="5"><hr></th></tr>
+       <h1>Index of {{root_prefix}}{{path}}</h1>
+    <table><tr><th></th><th><a href="{{root_prefix}}{{index_link['name']}}">Name</a></th><th><a href="{{root_prefix}}{{index_link['lastModified']}}">Last modified</a></th><th><a href="{{root_prefix}}{{index_link['size']}}">Size</a></th><th>Description</th></tr><tr><th colspan="5"><hr></th></tr>
     {% if path != '/'%}
+    {% if parent_directory == '' %}
     <tr><td valign="top"><img src="https://s3-us-west-2.amazonaws.com/icons.puppet.com/back.gif"></td><td><a href="{{parent_directory}}/index_by_name.html">Parent Directory</a></td><td>&nbsp;</td><td align="right">  - </td><td>&nbsp;</td></tr>
+    {% else %}
+    <tr><td valign="top"><img src="https://s3-us-west-2.amazonaws.com/icons.puppet.com/back.gif"></td><td><a href="{{root_prefix}}{{parent_directory}}/index_by_name.html">Parent Directory</a></td><td>&nbsp;</td><td align="right">  - </td><td>&nbsp;</td></tr>
+    {% endif %}
     {% endif %}
     {% for item in contents %}
         <tr><td valign="top"><img src="https://s3-us-west-2.amazonaws.com/icons.puppet.com/{{item['icon']}}" alt="[DIR]"></td><td><a href="{{item['name'].split('/')[-1:][0]}}">{{item['name'].split('/')[-1:][0]}}</a></td><td align="right">{{item['lastModified']}}  </td><td align="right"> {{item['size']}}</td><td>&nbsp;</td></tr>
@@ -77,7 +84,7 @@ def render_index(prefix, order_by, contents, reverse_order, base_path):
     </body></html>
     """
 
-    return Environment().from_string(HTML).render(path=path, contents=formatted_contents, parent_directory=parent_directory, index_link=index_by)
+    return Environment().from_string(HTML).render(path=path, contents=formatted_contents, parent_directory=parent_directory, index_link=index_by, root_prefix=root_prefix)
 
 def index_file_name(prefix, order_by, reverse_order):
     order_suffix = "_reverse" if reverse_order else ""
