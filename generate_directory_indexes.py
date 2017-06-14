@@ -46,7 +46,7 @@ def render_index(prefix, order_by, contents, reverse_order, base_path):
     formatted_contents = format_directory_listing(sorted_contents)
 
     # Remove the base path from the prefix to avoid putting the full filesystem path in the index
-    path = '/' if prefix == base_path else prefix.replace(base_path, '')
+    path = '' if prefix == base_path else prefix.replace(base_path, '')
     parent_directory = '/'.join(path.split('/')[:-1])
 
     # dumb hack because paths are prefixed with / when run on os x but not linux
