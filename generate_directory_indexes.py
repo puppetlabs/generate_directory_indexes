@@ -1,8 +1,15 @@
-#!/usr/bin/python
+#!/usr/bin/env python
+"""
+ Generate a tree of HTML index files from an actual file structure
+ or a tree of files representing a file structure.
+"""
+
 import jinja2
 from jinja2 import Environment
-import os,sys
-import datetime
+import os
+import sys
+from datetime import datetime
+import time
 import argparse
 import re
 import logging
@@ -15,21 +22,46 @@ except ImportError:
 
 #sys.setrecursionlimit(2100000000)
 
-parser = argparse.ArgumentParser()
-parser.add_argument("path", help="Path to index and write indexes to")
-parser.add_argument("--noop", help="Only print files to be created without writing them to disk", action="store_true")
-parser.add_argument('--verbose', '-v', help="Verbose output. Repeat (up to -vvv) for more verbosity", action='count')
-args = parser.parse_args()
+configuration = None
 
-logger = logging.getLogger(__name__)
-if args.verbose == None:
-    logging.basicConfig(level=logging.ERROR)
-if args.verbose == 1:
-    logging.basicConfig(level=logging.WARNING)
-elif args.verbose == 2:
-    logging.basicConfig(level=logging.INFO)
-else:
-    logging.basicConfig(level=logging.DEBUG)
+def parse_arguments():
+    global configuration
+    global logger
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "path",
+        help="Top directory for writing index files.")
+    parser.add_argument(
+        "--file-metadata", "-f",
+        default=None,
+        help="A file containing data describing the tree to index.")
+    parser.add_argument(
+        "--metadata-delimiter", "-m",
+        default=";",
+        help="Character which seperates fields in the file metadata.")
+    parser.add_argument(
+        "--noop", "-n",
+        help="Only print files to be created without writing them to disk",
+        action="store_true")
+    parser.add_argument(
+        "--verbose", "-v",
+        help="Verbose output. Repeat (up to -vvv) for more verbosity",
+        action="count")
+    configuration = parser.parse_args()
+
+    logger = logging.getLogger(__name__)
+    logger_format = '%(filename)s: %(levelname)s %(message)s'
+
+    if configuration.verbose == 1:
+        logging.basicConfig(level=logging.WARNING, format=logger_format)
+    elif configuration.verbose == 2:
+        logging.basicConfig(level=logging.INFO, format=logger_format)
+    elif configuration.verbose > 2:
+        logging.basicConfig(level=logging.DEBUG, format=logger_format)
+    else:
+        logging.basicConfig(level=logging.ERROR, format=logger_format)
+
 
 def index_link(prefix, current_order_by, new_order_by, reverse_order):
     if current_order_by == new_order_by:
@@ -37,15 +69,20 @@ def index_link(prefix, current_order_by, new_order_by, reverse_order):
     else:
         return index_file_name(prefix, new_order_by, False)
 
-# use a templating library to turn a prefix and a list of contents into an HTML directory index
+
 def render_index(prefix, order_by, contents, reverse_order, base_path):
+    """
+      use a templating library to turn a prefix and a list of contents
+      into an HTML directory index
+    """
     logger.debug('rendering index for {prefix} ordered by {order_by} and reverse_order={reverse_order}'.format(prefix=prefix, order_by=order_by, reverse_order=reverse_order))
 
-
     sorted_contents = sorted(contents, key=lambda k: k[order_by], reverse=reverse_order)
-    formatted_contents = format_directory_listing(sorted_contents)
+    formatted_contents = format_file_details(sorted_contents)
 
-    # Remove the base path from the prefix to avoid putting the full filesystem path in the index
+    # Remove the base path from the prefix to avoid putting the full
+    # filesystem path in the index
+
     path = '' if prefix == base_path else prefix.replace(base_path, '')
     parent_directory = '/'.join(path.split('/')[:-1])
 
@@ -63,7 +100,7 @@ def render_index(prefix, order_by, contents, reverse_order, base_path):
     HTML = """
     <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
     <html>
-     <head> 
+     <head>
        <title>Index of {{root_prefix}}{{path}}</title>
      </head>
      <body>
@@ -84,7 +121,13 @@ def render_index(prefix, order_by, contents, reverse_order, base_path):
     </body></html>
     """
 
-    return Environment().from_string(HTML).render(path=path, contents=formatted_contents, parent_directory=parent_directory, index_link=index_by, root_prefix=root_prefix)
+    return Environment().from_string(HTML).render(
+        path=path,
+        contents=formatted_contents,
+        parent_directory=parent_directory,
+        index_link=index_by,
+        root_prefix=root_prefix)
+
 
 def index_file_name(prefix, order_by, reverse_order):
     order_suffix = "_reverse" if reverse_order else ""
@@ -93,20 +136,20 @@ def index_file_name(prefix, order_by, reverse_order):
 
 
 def format_date(d):
-    return datetime.datetime.fromtimestamp(
-        int(d)
-    ).strftime('%Y-%m-%d %H:%M:%S')
+    return datetime.fromtimestamp(int(d)).strftime('%Y-%m-%d %H:%M:%S')
 
-def format_size(num, suffix='B'):
+
+def format_size(a_number, suffix='B'):
     for unit in ['','Ki','Mi','Gi','Ti','Pi','Ei','Zi']:
-        if abs(num) < 1024.0:
-            return "%3.1f%s%s" % (num, unit, suffix)
-        num /= 1024.0
-    return "%.1f%s%s" % (num, 'Yi', suffix)
+        if abs(a_number) < 1024.0:
+            return '{:>3.1f}{}{}'.format(a_number, unit, suffix)
+        a_number /= 1024.0
+    return '{:1f}{}{}'.format(a_number, 'Yi', suffix)
 
-def format_directory_listing(directory_listing):
+
+def format_file_details(file_details):
     out = []
-    for k in directory_listing:
+    for k in file_details:
         out.append ({
         'name': k['name'],
         'lastModified': format_date(k['lastModified']),
@@ -115,31 +158,105 @@ def format_directory_listing(directory_listing):
     })
     return out
 
-def walk(path, base_path):
-    contents = os.listdir(path)
-    directory_listing = []
+
+def file_information(full_path, file, last_modified=None, size=None):
+    if not last_modified:
+        last_modified = os.path.getmtime(full_path)
+    if not size:
+        size = os.path.getsize(full_path)
+    icon = 'folder.gif' if os.path.isdir(full_path) else 'unknown.gif'
+
+    return {
+        'name': file,
+        'lastModified': last_modified,
+        'size': size,
+        'icon': icon
+    }
+
+
+def string_to_epoch_seconds(string, format):
+    utc_time = datetime.strptime(string, format)
+    epoch_time = (utc_time - datetime(1970, 1, 1)).total_seconds()
+
+    return epoch_time
+
+
+def is_excluded_file(file_name):
+    """
+      A list of file names to exclude from the generated index files.
+    """
+    excluded_file_names = [
+        "index.html",
+        "index_by_lastModified.html",
+        "index_by_lastModified_reverse.html",
+        "index_by_name.html",
+        "index_by_name_reverse.html",
+        "index_by_size.html",
+        "index_by_size_reverse.html"
+    ]
+
+    return file_name in excluded_file_names
+
+
+def parse_file_metadata(current_path, file_metadata):
+    last_modified_format = "%Y-%m-%d:%H:%M"
+    file_details = []
     # generate indexes for current path
-    for file in contents:
+    with open("/".join((current_path, file_metadata))) as file_handle:
+        for line in file_handle:
+            line = line.strip()
+            ##
+            # Metadata is either
+            # file_name;last_modified_date;last_modified_time;size
+            # or simply,
+            # directory_name
+            #
+            metadata = line.split(configuration.metadata_delimiter)
+            file_name = metadata[0]
+            if is_excluded_file(file_name):
+                continue
+
+            last_modified = time.time()
+            size = 0
+            full_path = os.path.join(current_path, file_name)
+
+            if len(metadata) != 1:
+                last_modified = string_to_epoch_seconds(
+                    metadata[1] + ":" + metadata[2],
+                    last_modified_format)
+                size = int(metadata[3])
+
+            file_details.append(
+                file_information(full_path, file_name, last_modified, size))
+
+    return file_details
+
+
+def gather_file_details(current_path, list_of_files):
+    file_details = []
+    # generate indexes for current path
+    for file_name in list_of_files:
         # add size, lastModified, file/folder type to metadata
-        fullpath = os.path.join(path, file)
-        if bool(re.match('.*index_by.*\.html$', file)):
+        full_path = os.path.join(current_path, file_name)
+        if is_excluded_file(file_name):
             continue
-        if(os.path.exists(fullpath)):
-            icon = 'folder.gif' if os.path.isdir(fullpath) else 'unknown.gif'
-            directory_listing.append({
-                'name': file,
-                'lastModified': os.path.getmtime(fullpath),
-                'size': os.path.getsize(fullpath),
-                'icon': icon
-            })
+        if os.path.exists(full_path):
+            icon = 'folder.gif' if os.path.isdir(full_path) else 'unknown.gif'
+            file_details.append(file_information(full_path, file_name))
         else:
-            logging.error('skipping \'{}\' because the file cannot be read'.format(fullpath))
+            logging.error('skipping \'{}\' because the file cannot be read'.format(full_path))
+
+    return file_details
+
+
+def make_index_files(base_path, current_path, file_details):
     for order_by in ['name', 'size', 'lastModified']:
         for reverse_order in [True, False]:
-            file_name = os.path.join(path, index_file_name('', order_by, reverse_order))
-            rendered_html = render_index(path, order_by, directory_listing, reverse_order, base_path)
-            if args.noop:
-                logging.info('Would create: ', file_name)
+            file_name = os.path.join(current_path, index_file_name('', order_by, reverse_order))
+            rendered_html = render_index(current_path, order_by, file_details,
+                                         reverse_order, base_path)
+            if configuration.noop:
+                logging.info('Would create: {}'.format(file_name))
             else:
                 logging.info('Wrote: {}'.format(file_name))
                 index_file = open(file_name, 'w')
@@ -147,15 +264,29 @@ def walk(path, base_path):
                 index_file.close()
 
 
-    # recurse into subdirectories
-    for file in contents:
-        file_pwd = os.path.join(path, file)
-        if os.path.isdir(file_pwd):
-            walk(file_pwd, base_path)
+def traverse_tree(base_path, current_path, file_metadata=None):
+    contents = os.listdir(current_path)
 
-def validate_input(path):
-    if not os.path.isdir(path):
-        sys.exit('Error: {} is not a directory'.format(path))
+    if file_metadata:
+        file_details = parse_file_metadata(current_path, file_metadata)
+    else:
+        file_details = gather_file_details(current_path, contents)
 
-validate_input(args.path)
-walk(args.path, args.path)
+    make_index_files(base_path, current_path, file_details)
+    for file_name in contents:
+        absolute_path = os.path.join(current_path, file_name)
+        if os.path.isdir(absolute_path):
+            traverse_tree(base_path, absolute_path, file_metadata)
+
+
+def validate_input(configuration):
+    script = os.path.basename(sys.argv[0])
+
+    if not os.path.isdir(configuration.path):
+        sys.exit('{}: ERROR {} is not a directory'.format(script, configuration.path))
+
+
+if __name__ == '__main__':
+    parse_arguments()
+    validate_input(configuration)
+    traverse_tree(configuration.path, configuration.path, configuration.file_metadata)
