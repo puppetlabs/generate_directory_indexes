@@ -37,7 +37,6 @@ Developing
    "artifactory" repo to the pypirc. Use your username.
 
 ::
-
   [distutils]
   index-servers =
     artifactory
@@ -47,11 +46,13 @@ Developing
   username: my.username
 
 3. From your project root, run the following command to upload the package.
-   Make sure the setup script works::
+   Make sure the setup script works
 
+::
   python setup.py sdist upload -r artifactory
 
-4. To resolve packages using pip, add the following to ~/.pip/pip.conf::
+4. To resolve packages using pip, add the following to ~/.pip/pip.conf
 
+::
   [global]
   index-url = https://artifactory.delivery.puppetlabs.net/artifactory/api/pypi/pypi/simple
