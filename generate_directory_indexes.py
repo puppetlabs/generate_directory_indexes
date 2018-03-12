@@ -160,9 +160,9 @@ def format_file_details(file_details):
 
 
 def file_information(full_path, file, last_modified=None, size=None):
-    if not last_modified:
+    if last_modified is None:
         last_modified = os.path.getmtime(full_path)
-    if not size:
+    if size is None:
         size = os.path.getsize(full_path)
     icon = 'folder.gif' if os.path.isdir(full_path) else 'unknown.gif'
 
