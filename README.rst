@@ -37,6 +37,7 @@ Developing
    "artifactory" repo to the pypirc. Use your username.
 
 ::
+
   [distutils]
   index-servers =
     artifactory
@@ -49,10 +50,12 @@ Developing
    Make sure the setup script works
 
 ::
+
   python setup.py sdist upload -r artifactory
 
 4. To resolve packages using pip, add the following to ~/.pip/pip.conf
 
 ::
+
   [global]
   index-url = https://artifactory.delivery.puppetlabs.net/artifactory/api/pypi/pypi/simple
