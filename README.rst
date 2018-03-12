@@ -27,3 +27,31 @@ optional arguments:
                         disk
   --verbose, -v         Verbose output. Repeat (up to -vvv) for more verbosity
   --help, -h            show this help message and exit
+
+
+Developing
+=======================
+
+1. Make sure you're familiar with Python setuptools/distutils
+2. Create a ~/.pypirc file if you don't already have one. Add the 
+   "artifactory" repo to the pypirc. Use your username.
+
+::
+
+  [distutils]
+  index-servers =
+    artifactory
+
+  [artifactory]
+  repository: https://artifactory.delivery.puppetlabs.net/artifactory/api/pypi/pypi
+  username: my.username
+
+3. From your project root, run the following command to upload the package.
+   Make sure the setup script works::
+
+  python setup.py sdist upload -r artifactory
+
+4. To resolve packages using pip, add the following to ~/.pip/pip.conf::
+
+  [global]
+  index-url = https://artifactory.delivery.puppetlabs.net/artifactory/api/pypi/pypi/simple
