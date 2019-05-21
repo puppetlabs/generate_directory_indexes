@@ -80,9 +80,14 @@ def render_index(prefix, order_by, contents, reverse_order, base_path):
     sorted_contents = sorted(contents, key=lambda k: k[order_by], reverse=reverse_order)
     formatted_contents = format_file_details(sorted_contents)
 
+    # If the base path has a '/' in it, assume we're working with a
+    # nested directory and update the base_path so parent directory
+    # works
+    if bool('/' in base_path):
+        base_path = '/'.join(base_path.split('/')[:-1])
+
     # Remove the base path from the prefix to avoid putting the full
     # filesystem path in the index
-
     path = '' if prefix == base_path else prefix.replace(base_path, '')
     parent_directory = '/'.join(path.split('/')[:-1])
 
