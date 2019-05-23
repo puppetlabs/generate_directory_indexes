@@ -33,6 +33,11 @@ def parse_arguments():
         "path",
         help="Top directory for writing index files.")
     parser.add_argument(
+        "base_path",
+        default=None,
+        nargs="?",
+        help="The part of the path to remove when generating indices")
+    parser.add_argument(
         "--file-metadata", "-f",
         default=None,
         help="A file containing data describing the tree to index.")
@@ -62,6 +67,9 @@ def parse_arguments():
     else:
         logging.basicConfig(level=logging.ERROR, format=logger_format)
 
+    if configuration.base_path is None:
+        configuration.base_path = configuration.path
+
 
 def index_link(prefix, current_order_by, new_order_by, reverse_order):
     if current_order_by == new_order_by:
@@ -79,12 +87,6 @@ def render_index(prefix, order_by, contents, reverse_order, base_path):
 
     sorted_contents = sorted(contents, key=lambda k: k[order_by], reverse=reverse_order)
     formatted_contents = format_file_details(sorted_contents)
-
-    # If the base path has a '/' in it, assume we're working with a
-    # nested directory and update the base_path so we're only stripping
-    # out the top directory
-    if bool('/' in base_path):
-        base_path = base_path.split('/')[0]
 
     # Remove the base path from the prefix to avoid putting the full
     # filesystem path in the index
@@ -294,4 +296,4 @@ def validate_input(configuration):
 if __name__ == '__main__':
     parse_arguments()
     validate_input(configuration)
-    traverse_tree(configuration.path, configuration.path, configuration.file_metadata)
+    traverse_tree(configuration.base_path, configuration.path, configuration.file_metadata)
