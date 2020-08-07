@@ -215,8 +215,11 @@ def is_excluded_file(file_name):
 
 def is_excluded_path(path):
     exclude = False
+    # for the ability to match more exactly, get rid of base_path
+    path = path.replace(configuration.base_path, '')
     if configuration.exclude_path is not None:
-        exclude = exclude or len(filter(lambda x: re.search('/{path}'.format(path=x), path), configuration.exclude_path)) != 0
+        # similar to configuration[exclude_path].select { |x| x =~ /^\/#{path}/ }.any? in ruby
+        exclude = exclude or len(filter(lambda x: re.match('/{path}'.format(path=x), path), configuration.exclude_path)) != 0
 
     return exclude
 
