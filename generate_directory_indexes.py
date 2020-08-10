@@ -214,14 +214,13 @@ def is_excluded_file(file_name):
     return file_name in excluded_file_names
 
 def is_excluded_path(path):
-    exclude = False
     # for the ability to match more exactly, get rid of base_path
     path = path.replace(configuration.base_path, '')
     if configuration.exclude_path is not None:
         # similar to configuration[exclude_path].select { |x| x =~ /^\/#{path}/ }.any? in ruby
-        exclude = exclude or len(filter(lambda x: re.match('/{path}'.format(path=x), path), configuration.exclude_path)) != 0
+        return len(filter(lambda x: re.match('/{path}'.format(path=x), path), configuration.exclude_path)) != 0
 
-    return exclude
+    return False
 
 
 def parse_file_metadata(current_path, file_metadata):
