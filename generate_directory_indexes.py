@@ -46,6 +46,11 @@ def parse_arguments():
         default=";",
         help="Character which seperates fields in the file metadata.")
     parser.add_argument(
+            "--exclude-path", "-x",
+            default=None,
+            action='append',
+            help="paths to exclude from indexing")
+    parser.add_argument(
         "--noop", "-n",
         help="Only print files to be created without writing them to disk",
         action="store_true")
@@ -208,6 +213,15 @@ def is_excluded_file(file_name):
 
     return file_name in excluded_file_names
 
+def is_excluded_path(path):
+    # for the ability to match more exactly, get rid of base_path
+    path = path.replace(configuration.base_path, '')
+    if configuration.exclude_path is not None:
+        # similar to configuration[exclude_path].select { |x| x =~ /^\/#{path}/ }.any? in ruby
+        return len(filter(lambda x: re.match('/{path}'.format(path=x), path), configuration.exclude_path)) != 0
+
+    return False
+
 
 def parse_file_metadata(current_path, file_metadata):
     last_modified_format = "%Y-%m-%d:%H:%M"
@@ -251,6 +265,9 @@ def gather_file_details(current_path, list_of_files):
         full_path = os.path.join(current_path, file_name)
         if is_excluded_file(file_name):
             continue
+        if is_excluded_path(full_path):
+            logging.debug('excluding: {path}'.format(path=full_path))
+            continue
         if os.path.exists(full_path):
             icon = 'folder.gif' if os.path.isdir(full_path) else 'unknown.gif'
             file_details.append(file_information(full_path, file_name))
@@ -277,6 +294,10 @@ def make_index_files(base_path, current_path, file_details):
 
 def traverse_tree(base_path, current_path, file_metadata=None):
     contents = os.listdir(current_path)
+
+    if is_excluded_path(current_path):
+        logging.debug('excluding: {path}'.format(path=current_path))
+        return None
 
     if file_metadata:
         file_details = parse_file_metadata(current_path, file_metadata)
