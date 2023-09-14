@@ -63,14 +63,15 @@ def parse_arguments():
     logger = logging.getLogger(__name__)
     logger_format = '%(filename)s: %(levelname)s %(message)s'
 
-    if configuration.verbose == 1:
+    if configuration.verbose == None:
+        logging.basicConfig(level=logging.ERROR, format=logger_format)
+    elif configuration.verbose == 1:
         logging.basicConfig(level=logging.WARNING, format=logger_format)
     elif configuration.verbose == 2:
         logging.basicConfig(level=logging.INFO, format=logger_format)
-    elif configuration.verbose > 2:
-        logging.basicConfig(level=logging.DEBUG, format=logger_format)
     else:
-        logging.basicConfig(level=logging.ERROR, format=logger_format)
+        logging.basicConfig(level=logging.DEBUG, format=logger_format)
+
 
     if configuration.base_path is None:
         configuration.base_path = configuration.path
