@@ -1,6 +1,20 @@
 Apache-style Directory Index Generator
 =======================
 
+Abandoned Code
+=======================
+
+generate_directory_indexes is no longer maintained.
+
+License
+=======
+
+generate_directory_indexes is licensed under the Apache License, Version
+2.0. See: https://www.apache.org/licenses/LICENSE-2.0
+
+Using
+=====
+
 This script generates Apache-style directory indexes as static HTML
 files. The primary use case is indexing files in an AWS S3 bucket so
 that they can be navigated like files served by an Apache web server.
@@ -33,7 +47,7 @@ Developing
 =======================
 
 1. Make sure you're familiar with Python setuptools/distutils
-2. Create a ~/.pypirc file if you don't already have one. Add the 
+2. Create a ~/.pypirc file if you don't already have one. Add the
    "artifactory" repo to the pypirc. Use your username.
 
 ::
